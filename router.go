@@ -144,6 +144,7 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 		pConfig := producer.NewConfig()
 		pConfig.BootstrapServers = config.BootstrapServers
 		pConfig.Version = sarama.V2_4_0_0
+		pConfig.RequiredAcks = producer.WaitForAll
 		p, err := producer.NewProducer(pConfig)
 		if err != nil {
 			return nil, errors.WithPrevious(err, `router init failed`)
