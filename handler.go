@@ -181,6 +181,14 @@ func (h *Handler) serve(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return errors.WithPrevious(err, fmt.Sprintf(`http request read failed on route [%s]`, h.name))
 	}
 
+	// pre handler metrics
+	defer func(start time.Time) {
+		elapsed := time.Now().Sub(start).Milliseconds()
+		h.router.preHandlerObserver.Observe(func(e int64) float64 {
+			return float64(e)
+		}(elapsed), map[string]string{"type": h.name, "error": fmt.Sprintf("%v", err != nil)})
+	}(time.Now())
+
 	// decode http request through provided encoder
 	v, err := h.encode.Decode(byt)
 	if err != nil {

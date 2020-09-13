@@ -11,8 +11,10 @@ import (
 	"github.com/tryfix/kstream/data"
 	"github.com/tryfix/kstream/producer"
 	"github.com/tryfix/log"
+	"github.com/tryfix/metrics"
 	"github.com/tryfix/traceable-context"
 	"net/http"
+	"time"
 )
 
 type group struct {
@@ -30,16 +32,18 @@ func (g *group) OnPartitionAssigned(ctx context.Context, assigned []consumer.Top
 }
 
 type router struct {
-	c                  consumer.Consumer
-	p                  producer.Producer
-	handlers           map[string]*Handler
-	routerTopic        string
-	logger             log.Logger
-	customParamTypes   map[string]CustomParam
-	headersFuncs       map[string]func() string
-	successHandlerFunc SuccessHandlerFunc
-	errorHandlerFunc   ErrorHandlerFunc
-	contextExtractor   ContextExtractor
+	c                   consumer.Consumer
+	p                   producer.Producer
+	handlers            map[string]*Handler
+	routerTopic         string
+	logger              log.Logger
+	preHandlerObserver  metrics.Observer
+	postHandlerObserver metrics.Observer
+	customParamTypes    map[string]CustomParam
+	headersFuncs        map[string]func() string
+	successHandlerFunc  SuccessHandlerFunc
+	errorHandlerFunc    ErrorHandlerFunc
+	contextExtractor    ContextExtractor
 }
 
 type Config struct {
@@ -92,6 +96,22 @@ func WithLogger(l log.Logger) routerOption {
 	}
 }
 
+func WithMetricsReporter(reporter metrics.Reporter) routerOption {
+	return func(r *router) {
+		r.preHandlerObserver = reporter.Observer(metrics.MetricConf{
+			Path:        "pre_request_latency",
+			Labels:      []string{`type`, `error`},
+			ConstLabels: nil,
+		})
+
+		r.postHandlerObserver = reporter.Observer(metrics.MetricConf{
+			Path:        "post_request_latency",
+			Labels:      []string{`type`, `error`},
+			ConstLabels: nil,
+		})
+	}
+}
+
 func WithParamType(name string, decoder func(v string) (interface{}, error)) routerOption {
 	return func(r *router) {
 		r.customParamTypes[name] = CustomParam{
@@ -115,6 +135,14 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 		},
 	}
 
+	empty := struct {
+		Path        string
+		Labels      []string
+		ConstLabels map[string]string
+	}{Path: "", Labels: nil, ConstLabels: nil}
+	r.preHandlerObserver = metrics.NoopReporter().Observer(empty)
+	r.postHandlerObserver = metrics.NoopReporter().Observer(empty)
+
 	for _, opt := range options {
 		opt(r)
 	}
@@ -127,7 +155,7 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 		c, err := consumer.NewConsumer(cConfig, consumer.WithRecordUuidExtractFunc(func(message *data.Record) uuid.UUID {
 			traceId := message.Headers.Read([]byte(`trace_id`))
 			uid, err := uuid.Parse(string(traceId))
-			if err != nil{
+			if err != nil {
 				r.logger.Error(`trace-id does not exist creating new id`)
 				return uuid.New()
 			}
@@ -198,17 +226,26 @@ func (r *router) Start() error {
 func (r *router) startPartition(p consumer.Partition) {
 	for record := range p.Records() {
 		ctx := traceable_context.WithUUID(record.UUID)
-		if err := r.process(ctx, record); err != nil{
+		if err := r.process(ctx, record); err != nil {
 			r.logger.ErrorContext(ctx, record.UUID, err)
 		}
 	}
 }
 
-func (r *router) process(ctx context.Context, record *data.Record) error{
+func (r *router) process(ctx context.Context, record *data.Record) error {
+	var err error
 	route := Route{}
-	if err := json.Unmarshal(record.Value, &route); err != nil {
+	if err = json.Unmarshal(record.Value, &route); err != nil {
 		return errors.WithPrevious(err, fmt.Sprintf(`re-route roiute decode error on route [%s]`, route.Name))
 	}
+
+	// post handler metrics
+	defer func(start time.Time) {
+		elapsed := time.Now().Sub(start).Milliseconds()
+		r.postHandlerObserver.Observe(func(e int64) float64 {
+			return float64(e)
+		}(elapsed), map[string]string{"type": route.Name, "error": fmt.Sprintf("%v", err != nil)})
+	}(time.Now())
 
 	h, ok := r.handlers[route.Name]
 	if !ok {

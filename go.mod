@@ -9,5 +9,6 @@ require (
 	github.com/tryfix/errors v1.0.0
 	github.com/tryfix/kstream v1.2.41
 	github.com/tryfix/log v1.0.2
+	github.com/tryfix/metrics v1.0.1
 	github.com/tryfix/traceable-context v1.0.1
 )
