@@ -31,7 +31,7 @@ func (g *group) OnPartitionAssigned(ctx context.Context, assigned []consumer.Top
 	return nil
 }
 
-type router struct {
+type Router struct {
 	c                   consumer.Consumer
 	p                   producer.Producer
 	handlers            map[string]*Handler
@@ -52,52 +52,52 @@ type Config struct {
 	ConsumerGroup    string
 }
 
-type routerOption func(*router)
+type routerOption func(*Router)
 
 func WithProducer(p producer.Producer) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.p = p
 	}
 }
 
 func WithSuccessHandlerFunc(fn SuccessHandlerFunc) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.successHandlerFunc = fn
 	}
 }
 
 func WithHeaderFunc(name string, fn func() string) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.headersFuncs[name] = fn
 	}
 }
 
 func WithErrorHandlerFunc(fn ErrorHandlerFunc) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.errorHandlerFunc = fn
 	}
 }
 
 func WithContextExtractor(fn ContextExtractor) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.contextExtractor = fn
 	}
 }
 
 func WithConsumer(c consumer.Consumer) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.c = c
 	}
 }
 
 func WithLogger(l log.Logger) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.logger = l
 	}
 }
 
 func WithMetricsReporter(reporter metrics.Reporter) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.preHandlerObserver = reporter.Observer(metrics.MetricConf{
 			Path:        "pre_request_latency",
 			Labels:      []string{`type`, `error`},
@@ -113,7 +113,7 @@ func WithMetricsReporter(reporter metrics.Reporter) routerOption {
 }
 
 func WithParamType(name string, decoder func(v string) (interface{}, error)) routerOption {
-	return func(r *router) {
+	return func(r *Router) {
 		r.customParamTypes[name] = CustomParam{
 			typ:     ParamType(name),
 			decoder: decoder,
@@ -121,8 +121,8 @@ func WithParamType(name string, decoder func(v string) (interface{}, error)) rou
 	}
 }
 
-func NewRouter(config Config, options ...routerOption) (*router, error) {
-	r := &router{
+func NewRouter(config Config, options ...routerOption) (*Router, error) {
+	r := &Router{
 		c:                nil,
 		p:                nil,
 		headersFuncs:     map[string]func() string{},
@@ -163,7 +163,7 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 			return uid
 		}))
 		if err != nil {
-			return nil, errors.WithPrevious(err, `router init failed`)
+			return nil, errors.WithPrevious(err, `Router init failed`)
 		}
 		r.c = c
 	}
@@ -175,7 +175,7 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 		pConfig.RequiredAcks = producer.WaitForAll
 		p, err := producer.NewProducer(pConfig)
 		if err != nil {
-			return nil, errors.WithPrevious(err, `router init failed`)
+			return nil, errors.WithPrevious(err, `Router init failed`)
 		}
 		r.p = p
 	}
@@ -183,7 +183,7 @@ func NewRouter(config Config, options ...routerOption) (*router, error) {
 	return r, nil
 }
 
-func (r *router) NewHandler(name string, encoder Encoder, preHandler PreRouteHandleFunc, handler PostRouteHandleFunc, options ...handlerOption) http.Handler {
+func (r *Router) NewHandler(name string, encoder Encoder, preHandler PreRouteHandleFunc, handler PostRouteHandleFunc, options ...handlerOption) http.Handler {
 	h := &Handler{
 		postHandler:      handler,
 		preHandler:       preHandler,
@@ -209,11 +209,11 @@ func (r *router) NewHandler(name string, encoder Encoder, preHandler PreRouteHan
 	return h
 }
 
-func (r *router) Start() error {
+func (r *Router) Start() error {
 	// start consumer
 	partitions, err := r.c.Consume([]string{r.routerTopic}, &group{logger: r.logger})
 	if err != nil {
-		return errors.WithPrevious(err, `router consumer start failed`)
+		return errors.WithPrevious(err, `Router consumer start failed`)
 	}
 
 	for p := range partitions {
@@ -223,7 +223,7 @@ func (r *router) Start() error {
 	return nil
 }
 
-func (r *router) startPartition(p consumer.Partition) {
+func (r *Router) startPartition(p consumer.Partition) {
 	for record := range p.Records() {
 		ctx := traceable_context.WithUUID(record.UUID)
 		if err := r.process(ctx, record); err != nil {
@@ -232,7 +232,7 @@ func (r *router) startPartition(p consumer.Partition) {
 	}
 }
 
-func (r *router) process(ctx context.Context, record *data.Record) error {
+func (r *Router) process(ctx context.Context, record *data.Record) error {
 	var err error
 	route := Route{}
 	if err = json.Unmarshal(record.Value, &route); err != nil {

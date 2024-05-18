@@ -127,7 +127,7 @@ type Handler struct {
 	encode             Encoder
 	supportedHeaders   []Param
 	supportedParams    []Param
-	router             *router
+	router             *Router
 	name               string
 	headersFuncs       map[string]func() string
 	keyMapper          KeyMapper
@@ -165,7 +165,7 @@ func (h *Handler) serve(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		rawHeaders[h.name] = h.whenEmpty()
 	}
 
-	// apply http router params to re-route params
+	// apply http Router params to re-route params
 	vars := mux.Vars(r)
 	for _, h := range h.supportedParams {
 		v, ok := vars[h.name]
