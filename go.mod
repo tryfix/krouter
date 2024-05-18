@@ -1,4 +1,4 @@
-module github.com/tryfix/krouter
+module github.com/HADLakmal/krouter
 
 go 1.13
 
