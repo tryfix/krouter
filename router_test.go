@@ -29,9 +29,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	// create a topic
 	topics := admin.NewMockTopics()
 	if err := topics.AddTopic(&admin.MockTopic{
-		Name: "router",
+		Name: "Router",
 		Meta: &admin.Topic{
-			Name:          "router",
+			Name:          "Router",
 			NumPartitions: 2,
 		},
 	}); err != nil {
@@ -42,7 +42,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	con := consumer.NewMockConsumer(topics)
 
 	router, err := NewRouter(Config{
-		RouterTopic: "router",
+		RouterTopic: "Router",
 	},
 		WithErrorHandlerFunc(func(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) error {
 			w.Header().Add("Content-Type", "application/json")
